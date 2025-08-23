@@ -50,8 +50,8 @@
      │ credentials                          │
      │   - KMS encryption for data at rest  │
      │ 2. Backend Infrastructure            │
-     │   - ECS Fargate for FastAPI          │
-     │ containers                           │
+     │   - Container deployment for FastAPI │
+     │ (ECS, Lambda, EC2, or other)         │
      │   - Application Load Balancer with   │
      │ SSL                                  │
      │   - RDS PostgreSQL with encryption   │
