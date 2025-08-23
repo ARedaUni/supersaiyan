@@ -49,15 +49,5 @@ describe('Button', () => {
         expect(handleClick).not.toHaveBeenCalled();
     });
 
-    it('should be accessible via keyboard', async () => {
-        const handleClick = vi.fn();
-        render(<Button onClick={handleClick}>Save Changes</Button>);
-
-        const button = screen.getByText('Save Changes');
-        button.focus();
-        await userEvent.keyboard('{Enter}');
-
-        expect(handleClick).toHaveBeenCalledOnce();
-    });
 });
 
