@@ -31,40 +31,13 @@
      │   - Set up security headers (HSTS,   │
      │ CSP, X-Frame-Options)                │
      │                                      │
-     │ Frontend - Component-Driven          │
+     │ Frontend - Component and Test-Driven │
      │ Development                          │
      │                                      │
-     │ 1. Set Up Component Structure        │
-     │   - Create atomic design folder      │
-     │ structure (atoms, molecules,         │
-     │ organisms)                           │
-     │   - Implement base component patterns│
-     │  with TypeScript                     │
-     │   - Add component documentation with │
-     │ Storybook                            │
-     │ 2. Build Core UI Components          │
-     │   - Form components with built-in    │
-     │ validation                           │
-     │   - Secure input components with XSS │
-     │ prevention                           │
-     │   - Loading states and error         │
-     │ boundaries                           │
-     │   - Toast notifications for user     │
-     │ feedback                             │
-     │ 3. Implement API Layer               │
-     │   - Create API client with axios     │
-     │ interceptors                         │
-     │   - Add request/response encryption  │
-     │ for sensitive data                   │
-     │   - Implement token refresh logic    │
-     │   - Add request retry with           │
-     │ exponential backoff                  │
-     │ 4. State Management Setup            │
-     │   - Configure TanStack Query for     │
-     │ server state                         │
-     │   - Add Zustand for client state     │
-     │   - Implement optimistic updates     │
-     │   - Add cache invalidation strategies│
+     │ See frontend/CLAUDE.md for detailed  │
+     │ frontend implementation plan with    │
+     │ TDD principles, component structure, │
+     │ API layer, and state management.     │
      │                                      │
      │ AWS Infrastructure with CDK          │
      │                                      │
