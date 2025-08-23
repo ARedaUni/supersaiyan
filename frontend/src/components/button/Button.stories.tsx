@@ -1,27 +1,30 @@
 import type { Meta, StoryObj } from '@storybook/react';
-
-
-
 import { Button } from './Button';
 
-// More on how to set up stories at: https://storybook.js.org/docs/writing-stories#default-export
 const meta: Meta<typeof Button> = {
-  title: 'Example/Button',
+  title: 'Components/Button',
   component: Button,
   parameters: {
-    // Optional parameter to center the component in the Canvas. More info: https://storybook.js.org/docs/configure/story-layout
     layout: 'centered',
   },
-  // This component will have an automatically generated Autodocs entry: https://storybook.js.org/docs/writing-docs/autodocs
   tags: ['autodocs'],
-  // More on argTypes: https://storybook.js.org/docs/api/argtypes
   argTypes: {
-    primary: {
-      control: 'boolean',
+    variant: {
+      control: { type: 'select' },
+      options: ['primary', 'secondary', 'success', 'warning', 'error', 'info'],
     },
     size: {
       control: { type: 'select' },
       options: ['small', 'medium', 'large'],
+    },
+    loading: {
+      control: 'boolean',
+    },
+    disabled: {
+      control: 'boolean',
+    },
+    fullWidth: {
+      control: 'boolean',
     },
   },
 };
@@ -29,39 +32,90 @@ const meta: Meta<typeof Button> = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-// More on writing stories with args: https://storybook.js.org/docs/writing-stories/args
 export const Primary: Story = {
   args: {
-    primary: true,
-    label: 'Button',
+    variant: 'primary',
+    children: 'Primary Button',
   },
 };
 
 export const Secondary: Story = {
   args: {
-    label: 'Button',
+    variant: 'secondary',
+    children: 'Secondary Button',
   },
 };
 
-
-
-export const Large: Story = {
+export const Success: Story = {
   args: {
-    size: 'large',
-    label: 'Button',
+    variant: 'success',
+    children: 'Success Button',
+  },
+};
+
+export const Warning: Story = {
+  args: {
+    variant: 'warning',
+    children: 'Warning Button',
+  },
+};
+
+export const Error: Story = {
+  args: {
+    variant: 'error',
+    children: 'Error Button',
+  },
+};
+
+export const Loading: Story = {
+  args: {
+    variant: 'primary',
+    loading: true,
+    children: 'Loading Button',
+  },
+};
+
+export const Disabled: Story = {
+  args: {
+    variant: 'primary',
+    disabled: true,
+    disabledReason: 'This action is not available',
+    children: 'Disabled Button',
+  },
+};
+
+export const WithIcons: Story = {
+  args: {
+    variant: 'primary',
+    children: 'Button with Icons',
+    startIcon: '🚀',
+    endIcon: '→',
   },
 };
 
 export const Small: Story = {
   args: {
+    variant: 'primary',
     size: 'small',
-    label: 'Button',
+    children: 'Small Button',
   },
 };
 
-export const somestory: Story = {
+export const Large: Story = {
   args: {
-    size: 'small',
-    label: 'Button',
+    variant: 'primary',
+    size: 'large',
+    children: 'Large Button',
+  },
+};
+
+export const FullWidth: Story = {
+  args: {
+    variant: 'primary',
+    fullWidth: true,
+    children: 'Full Width Button',
+  },
+  parameters: {
+    layout: 'padded',
   },
 };
