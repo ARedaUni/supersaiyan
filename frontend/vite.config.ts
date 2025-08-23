@@ -20,7 +20,7 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: ['./src/test-setup.ts'],
     globals: true,
     projects: [
       // Regular component tests
@@ -30,7 +30,7 @@ export default defineConfig({
           name: 'unit',
           include: ['src/**/*.test.{ts,tsx}'],
           environment: 'jsdom',
-          setupFiles: ['./src/test/setup.ts'],
+          setupFiles: ['./src/test-setup.ts'],
           globals: true,
         },
       },
