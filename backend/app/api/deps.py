@@ -9,8 +9,9 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.core.security import convert_user_in_db_to_user, get_token_service, get_user
+from app.core.security import convert_user_in_db_to_user, get_token_service
 from app.schemas.user import User
+from app.services.user import UserService
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/token")
 
@@ -35,7 +36,8 @@ async def get_current_user(
     if username is None or not isinstance(username, str):
         raise credentials_exception
 
-    user = await get_user(session, username)
+    user_service = UserService(session)
+    user = await user_service.get_user_by_username(username)
     if user is None:
         raise credentials_exception
 

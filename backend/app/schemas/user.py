@@ -37,6 +37,20 @@ class User(UserBase):
     pass
 
 
+class UserUpdate(BaseModel):
+    """Schema for user update requests."""
+
+    email: EmailStr | None = None
+    full_name: str | None = Field(
+        None, min_length=1, max_length=100, description="Full name"
+    )
+    password: str | None = Field(
+        None, min_length=8, description="Password must be at least 8 characters"
+    )
+    is_active: bool | None = None
+    is_superuser: bool | None = None
+
+
 class UserInDB(UserBase):
     """User schema as stored in database (with hashed password)."""
 

@@ -9,8 +9,6 @@ from typing import Any
 
 import bcrypt
 import jwt
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User as UserModel
 from app.schemas.user import User, UserInDB
@@ -184,67 +182,3 @@ def convert_user_in_db_to_user(user_in_db: UserInDB) -> User:
     )
 
 
-async def get_user(session: AsyncSession, username: str) -> UserInDB | None:
-    """Get user from the database by username."""
-    stmt = select(UserModel).where(UserModel.username == username)
-    result = await session.execute(stmt)
-    user_model = result.scalar_one_or_none()
-
-    if not user_model:
-        return None
-
-    return convert_user_model_to_schema(user_model)
-
-
-async def user_exists(
-    session: AsyncSession, username: str, email: str
-) -> dict[str, bool]:
-    """Check if username or email already exists."""
-    # Check username
-    username_stmt = select(UserModel).where(UserModel.username == username)
-    username_result = await session.execute(username_stmt)
-    username_exists = username_result.scalar_one_or_none() is not None
-
-    # Check email
-    email_stmt = select(UserModel).where(UserModel.email == email)
-    email_result = await session.execute(email_stmt)
-    email_exists = email_result.scalar_one_or_none() is not None
-
-    return {"username_exists": username_exists, "email_exists": email_exists}
-
-
-async def authenticate_user(
-    session: AsyncSession, username: str, password: str
-) -> User | None:
-    """Authenticate a user with username and password."""
-    user = await get_user(session, username)
-    if not user:
-        return None
-    if not verify_password(password, user.hashed_password):
-        return None
-    if user.disabled:
-        return None
-
-    return convert_user_in_db_to_user(user)
-
-
-async def create_user(
-    session: AsyncSession, username: str, email: str, full_name: str, password: str
-) -> User:
-    """Create a new user in the database."""
-    hashed_password = get_password_hash(password)
-
-    user_model = UserModel(
-        username=username,
-        email=email,
-        full_name=full_name,
-        hashed_password=hashed_password,
-        is_active=True,
-        is_superuser=False,
-    )
-
-    session.add(user_model)
-    await session.commit()
-    await session.refresh(user_model)
-
-    return convert_user_in_db_to_user(convert_user_model_to_schema(user_model))

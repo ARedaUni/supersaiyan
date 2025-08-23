@@ -14,16 +14,13 @@ from app.core.config import settings
 from app.core.database import get_session
 from app.core.security import (
     OAuth2Error,
-    authenticate_user,
     convert_user_in_db_to_user,
-    create_user,
     get_token_blacklist,
     get_token_service,
-    get_user,
-    user_exists,
 )
 from app.schemas.token import AccessTokenResponse, RefreshTokenRequest, Token
 from app.schemas.user import User, UserCreate
+from app.services.user import UserService
 
 router = APIRouter()
 
@@ -35,8 +32,10 @@ async def register_user(
     user_data: UserCreate, session: Annotated[AsyncSession, Depends(get_session)]
 ) -> User:
     """Register a new user."""
+    user_service = UserService(session)
+
     # Check if username or email already exists
-    existing = await user_exists(session, user_data.username, user_data.email)
+    existing = await user_service.user_exists(user_data.username, user_data.email)
 
     if existing["username_exists"]:
         raise HTTPException(
@@ -50,13 +49,7 @@ async def register_user(
         )
 
     # Create new user
-    user = await create_user(
-        session=session,
-        username=user_data.username,
-        email=user_data.email,
-        full_name=user_data.full_name,
-        password=user_data.password,
-    )
+    user = await user_service.create_user(user_data)
 
     return user
 
@@ -67,7 +60,8 @@ async def login_for_access_token(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Token:
     """Login endpoint that returns access and refresh tokens."""
-    user = await authenticate_user(session, form_data.username, form_data.password)
+    user_service = UserService(session)
+    user = await user_service.authenticate_user(form_data.username, form_data.password)
     if not user:
         raise OAuth2Error(
             error="invalid_grant",
@@ -123,7 +117,8 @@ async def refresh_access_token(
         )
 
     # Get user from database
-    user = await get_user(session, username)
+    user_service = UserService(session)
+    user = await user_service.get_user_by_username(username)
     if user is None:
         raise OAuth2Error(
             error="invalid_grant",
