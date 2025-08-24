@@ -1,36 +1,22 @@
 # AWS CDK Infrastructure Structure
 
 ## Overview
-The CDK (Cloud Development Kit) directory contains Infrastructure as Code (IaC) definitions for deploying a security-focused web application to AWS using cost-optimized, serverless architecture. It uses TypeScript and AWS CDK v2 to define cloud resources within AWS free tier limits.
+The CDK (Cloud Development Kit) directory contains Infrastructure as Code (IaC) definitions for deploying the Bedrock Chat application to AWS. It uses TypeScript and AWS CDK v2 to define cloud resources, constructs, and deployment stacks.
 
 ## Folder Structure
 
 ```
 cdk/
 ├── bin/
-│   └── app.ts                    # CDK app entry point
+├── custom-resources/
+│   └── cognito-trigger/
 ├── lib/
-│   ├── stacks/
-│   │   ├── main-stack.ts         # Main orchestration stack
-│   │   ├── auth-stack.ts         # Cognito authentication
-│   │   ├── api-stack.ts          # API Gateway + Lambda
-│   │   ├── database-stack.ts     # DynamoDB tables
-│   │   └── frontend-stack.ts     # S3 + CloudFront
+│   ├── constants/
 │   ├── constructs/
-│   │   ├── lambda-api.ts         # Lambda function constructs
-│   │   ├── cognito-auth.ts       # Cognito user pool setup
-│   │   ├── dynamodb-tables.ts    # Database table definitions
-│   │   └── static-site.ts        # S3 static hosting
-│   ├── lambdas/
-│   │   ├── auth/                 # Authentication Lambda functions
-│   │   ├── api/                  # API Lambda functions
-│   │   └── shared/               # Shared utilities
 │   └── utils/
-│       └── config.ts             # Environment configurations
-├── config/
-│   └── environment.ts            # Environment-specific settings
+├── rules/
 └── test/
-    └── constructs/               # Unit tests for constructs
+    └── utils/
 ```
 
 ## Script to Generate CDK Folder Structure
@@ -38,8 +24,8 @@ cdk/
 ```bash
 #!/bin/bash
 
-# Create CDK folder structure for serverless application
-mkdir -p cdk/{bin,lib/{stacks,constructs,lambdas/{auth,api,shared},utils},config,test/constructs}
+# Create CDK folder structure
+mkdir -p cdk/{bin,custom-resources/cognito-trigger,lib/{constants,constructs,utils},rules,test/utils}
 
 echo "CDK folder structure created successfully!"
 ```
@@ -47,104 +33,107 @@ echo "CDK folder structure created successfully!"
 ## Key Components
 
 ### Entry Point (`/bin/`)
-- `app.ts` - CDK application entry point and stack initialization
+- CDK application entry point and stack initialization
 
-### Core Infrastructure Stacks (`/lib/stacks/`)
-- **main-stack.ts** - Primary orchestration stack that coordinates all resources
-- **auth-stack.ts** - Cognito User Pool, Identity Pool, and authentication resources
-- **api-stack.ts** - API Gateway with Lambda integration and CORS configuration
-- **database-stack.ts** - DynamoDB tables with GSI and encryption
-- **frontend-stack.ts** - S3 static hosting with CloudFront distribution
+### Core Infrastructure (`/lib/`)
+- **Main Stacks**:
+  - `bedrock-chat-stack.ts` - Main application stack
+  - `bedrock-custom-bot-stack.ts` - Custom bot infrastructure
+  - `api-publishment-stack.ts` - API publication infrastructure
+  - `frontend-waf-stack.ts` - Frontend Web Application Firewall
+  - `bedrock-region-resources.ts` - Region-specific resources
 
 ### Reusable Constructs (`/lib/constructs/`)
-- **lambda-api.ts** - Lambda function constructs for API endpoints
-- **cognito-auth.ts** - Cognito authentication setup with user pools and RBAC
-- **dynamodb-tables.ts** - DynamoDB table definitions with GSI and encryption
-- **static-site.ts** - S3 bucket and CloudFront distribution for static hosting
+- **Core Services**:
+  - `api.ts` - REST API Gateway and Lambda functions
+  - `auth.ts` - Cognito authentication setup
+  - `database.ts` - RDS/DynamoDB database resources
+  - `frontend.ts` - CloudFront and S3 for web hosting
+  - `websocket.ts` - WebSocket API Gateway
 
-### Lambda Functions (`/lib/lambdas/`)
-- **auth/** - Authentication Lambda functions
-  - `login.py` - User login and token generation
-  - `register.py` - User registration with validation
-  - `refresh.py` - JWT token refresh
-  - `logout.py` - User logout and session cleanup
-- **api/** - API Lambda functions
-  - `users.py` - User CRUD operations
-  - `health.py` - Health check endpoint
-- **shared/** - Shared utilities and libraries
-  - `auth_utils.py` - JWT validation and user context
-  - `database.py` - DynamoDB connection utilities
-  - `response.py` - Standardized API response formatting
+- **AI/ML Components**:
+  - `embedding.ts` - Vector embedding infrastructure
+  - `bot-store.ts` - Bot storage and management
+  - `usage-analysis.ts` - Analytics and monitoring
+
+- **Build & Deployment**:
+  - `api-publish-codebuild.ts` - API publishing pipeline
+  - `bedrock-custom-bot-codebuild.ts` - Bot deployment pipeline
+
+- **Security**:
+  - `webacl-for-published-api.ts` - WAF rules for APIs
+
+### Configuration (`/lib/constants/`)
+- `docker.ts` - Docker configuration constants
 
 ### Utilities (`/lib/utils/`)
-- `config.ts` - Environment configurations and constants
+- `generate-physical-name.ts` - Resource naming utilities
+- `identity-provider.ts` - Identity provider configurations
+- `parameter-models.ts` - Parameter validation and models
+- `bedrock-guardrails.ts` - Bedrock service guardrails
+- `bedrock-knowledge-base-args.ts` - Knowledge base configuration
 
-### Environment Configuration (`/config/`)
-- `environment.ts` - Environment-specific settings (dev, staging, prod)
+### Custom Resources (`/custom-resources/`)
+- `cognito-trigger/` - Custom Cognito trigger Lambda functions
+  - `index.py` - Python-based Lambda handler
 
 ### Configuration Files
 - `cdk.json` - CDK configuration and feature flags
-- `package.json` - Project dependencies and scripts
+- `parameter.ts` - Stack parameter definitions
 - `tsconfig.json` - TypeScript configuration
 - `jest.config.js` - Jest testing configuration
 
-### Testing (`/test/constructs/`)
+### Compliance (`/rules/`)
+- `log-retention-checker.ts` - CloudWatch log retention compliance
+
+### Testing (`/test/`)
 - Unit tests for CDK constructs and utilities
-- Infrastructure validation and compliance tests
+- Infrastructure testing and validation
 
 ## Key Dependencies
 
 ### CDK Core
-- **aws-cdk-lib** - CDK core library (v2)
+- **aws-cdk-lib** - CDK core library
 - **constructs** - CDK constructs framework
 - **aws-cdk** - CDK CLI tool
 
-### Lambda and Compute
+### Specialized Constructs
+- **@cdklabs/generative-ai-cdk-constructs** - AI/ML constructs
 - **@aws-cdk/aws-lambda-python-alpha** - Python Lambda constructs
-- **aws-lambda-powertools** - Lambda utilities and observability
+- **@aws-cdk/aws-glue-alpha** - AWS Glue constructs
+- **cdk-aws-lambda-powertools-layer** - Lambda utilities
 
 ### Development Tools
 - **TypeScript** - Type-safe infrastructure code
 - **Jest** - Testing framework
-- **ts-jest** - TypeScript testing configuration
-- **@types/node** - Node.js type definitions
+- **@aws-prototyping-sdk/pdk-nag** - Best practices validation
+- **deploy-time-build** - Build-time utilities
 
 ### Utility Libraries
-- **zod** - Runtime type validation for configurations
+- **zod** - Runtime type validation
+- **effect** - Functional programming utilities
 
 ## Architecture Patterns
-- **Multi-Stack Architecture** - Separation of concerns across authentication, API, database, and frontend
-- **Serverless-First** - Lambda functions and managed services for cost optimization
-- **Security-First** - IAM roles, encryption at rest/transit, and Cognito authentication
-- **Free Tier Optimized** - Designed to stay within AWS free tier limits
-- **Environment-Agnostic** - Parameterized deployments for dev/staging/prod
-- **Infrastructure as Code** - Version-controlled, reproducible deployments
+- **Multi-Stack Architecture** - Separation of concerns across stacks
+- **Reusable Constructs** - Modular infrastructure components
+- **Environment-Agnostic** - Parameterized deployments
+- **Security-First** - WAF, IAM, and encryption by default
+- **Monitoring & Analytics** - Built-in observability
+- **CI/CD Ready** - CodeBuild integration
+- **Serverless-First** - Lambda and managed services
+- **Multi-Region Support** - Regional resource deployment
 
 ## Stack Relationships
-1. **main-stack** - Orchestrates and coordinates all other stacks
-2. **auth-stack** - Provides Cognito authentication for API and frontend
-3. **database-stack** - DynamoDB tables for application data storage
-4. **api-stack** - Lambda functions and API Gateway endpoints
-5. **frontend-stack** - S3 and CloudFront for React application hosting
+1. **bedrock-chat-stack** - Main application infrastructure
+2. **bedrock-custom-bot-stack** - Bot-specific resources
+3. **api-publishment-stack** - API management and publishing
+4. **frontend-waf-stack** - Security layer for frontend
+5. **bedrock-region-resources** - Region-specific services
 
-## Cost-Optimized Features
-- **AWS Free Tier Focus** - All services chosen to maximize free tier usage
-- **Serverless Architecture** - Pay-per-use Lambda functions and API Gateway
-- **DynamoDB On-Demand** - Pay-per-request pricing for unpredictable workloads
-- **S3 Standard Storage** - Cost-effective static website hosting
-- **CloudFront CDN** - Global content delivery within free tier limits
-- **Cognito User Pools** - Free authentication up to 50,000 MAUs
-
-## Security Features
-- **Encryption at Rest** - DynamoDB and S3 encryption enabled by default
-- **Encryption in Transit** - HTTPS/TLS for all communications
-- **IAM Least Privilege** - Minimal permissions for Lambda execution roles
-- **CORS Configuration** - Proper cross-origin resource sharing setup
-- **JWT Authentication** - Secure token-based authentication via Cognito
-- **Input Validation** - API Gateway request validation and Lambda input sanitization
-
-## Monitoring & Observability (Free Tier)
-- **CloudWatch Logs** - Lambda function logging and debugging
-- **CloudWatch Metrics** - Basic service metrics and alarms
-- **X-Ray Tracing** - Distributed tracing for Lambda functions (100K traces/month free)
-- **Health Checks** - API Gateway and Lambda health monitoring
+## Deployment Features
+- **Infrastructure as Code** - Version-controlled infrastructure
+- **Blue/Green Deployments** - Zero-downtime deployments
+- **Auto-scaling** - Dynamic resource scaling
+- **Cost Optimization** - Serverless and managed services
+- **Compliance** - Built-in governance and logging
+- **Disaster Recovery** - Multi-AZ and backup strategies
