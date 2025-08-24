@@ -40,18 +40,19 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(({
   const baseClasses = [
     'inline-flex items-center justify-center',
     'font-medium rounded-lg transition-all duration-200',
-    'focus:outline-none focus:ring-2 focus:ring-offset-2',
+    'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900',
     'disabled:opacity-50 disabled:cursor-not-allowed',
+    'shadow-lg hover:shadow-xl',
     fullWidth ? 'w-full' : 'w-auto'
   ].join(' ')
 
   const variantClasses = {
-    primary: 'text-white bg-blue-600 hover:bg-blue-700 focus:ring-blue-500 disabled:bg-blue-400',
-    secondary: 'text-blue-600 bg-blue-50 hover:bg-blue-100 focus:ring-blue-500 border border-blue-200',
-    success: 'text-white bg-green-600 hover:bg-green-700 focus:ring-green-500 disabled:bg-green-400',
-    warning: 'text-white bg-yellow-600 hover:bg-yellow-700 focus:ring-yellow-500 disabled:bg-yellow-400',
-    error: 'text-white bg-red-600 hover:bg-red-700 focus:ring-red-500 disabled:bg-red-400',
-    info: 'text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500 disabled:bg-indigo-400'
+    primary: 'text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:ring-blue-500/50 disabled:from-blue-400 disabled:to-blue-500',
+    secondary: 'text-blue-400 bg-gray-800 hover:bg-gray-700 focus:ring-blue-500/50 border border-gray-600 hover:border-gray-500',
+    success: 'text-white bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 focus:ring-emerald-500/50 disabled:from-emerald-400 disabled:to-emerald-500',
+    warning: 'text-white bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 focus:ring-amber-500/50 disabled:from-amber-400 disabled:to-amber-500',
+    error: 'text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 focus:ring-red-500/50 disabled:from-red-400 disabled:to-red-500',
+    info: 'text-white bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 focus:ring-indigo-500/50 disabled:from-indigo-400 disabled:to-indigo-500'
   }[variant]
 
   const sizeClasses = {

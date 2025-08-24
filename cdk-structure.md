@@ -1,15 +1,15 @@
 # AWS CDK Infrastructure Structure
 
 ## Overview
-The CDK (Cloud Development Kit) directory contains Infrastructure as Code (IaC) definitions for deploying the Bedrock Chat application to AWS. It uses TypeScript and AWS CDK v2 to define cloud resources, constructs, and deployment stacks.
+The CDK (Cloud Development Kit) directory contains Infrastructure as Code (IaC) definitions for deploying the security-focused professional practice application to AWS. It uses TypeScript and AWS CDK v2 to define cloud resources, constructs, and deployment stacks for Lambda functions, RDS PostgreSQL database, and S3 storage.
 
 ## Folder Structure
 
 ```
 cdk/
 ├── bin/
-├── custom-resources/
-│   └── cognito-trigger/
+├── lambda/
+│   └── handlers/
 ├── lib/
 │   ├── constants/
 │   ├── constructs/
@@ -25,7 +25,7 @@ cdk/
 #!/bin/bash
 
 # Create CDK folder structure
-mkdir -p cdk/{bin,custom-resources/cognito-trigger,lib/{constants,constructs,utils},rules,test/utils}
+mkdir -p cdk/{bin,lambda/handlers,lib/{constants,constructs,utils},rules,test/utils}
 
 echo "CDK folder structure created successfully!"
 ```
@@ -37,45 +37,46 @@ echo "CDK folder structure created successfully!"
 
 ### Core Infrastructure (`/lib/`)
 - **Main Stacks**:
-  - `bedrock-chat-stack.ts` - Main application stack
-  - `bedrock-custom-bot-stack.ts` - Custom bot infrastructure
-  - `api-publishment-stack.ts` - API publication infrastructure
-  - `frontend-waf-stack.ts` - Frontend Web Application Firewall
-  - `bedrock-region-resources.ts` - Region-specific resources
+  - `main-application-stack.ts` - Main application stack
+  - `lambda-api-stack.ts` - FastAPI Lambda functions and API Gateway
+  - `database-stack.ts` - RDS PostgreSQL infrastructure
+  - `storage-stack.ts` - S3 buckets for file storage
+  - `frontend-stack.ts` - Frontend hosting with CloudFront
+  - `security-stack.ts` - WAF, IAM roles, and security components
 
 ### Reusable Constructs (`/lib/constructs/`)
 - **Core Services**:
-  - `api.ts` - REST API Gateway and Lambda functions
+  - `api-gateway.ts` - REST API Gateway with Lambda integration
+  - `lambda-functions.ts` - FastAPI Lambda functions
+  - `database.ts` - RDS PostgreSQL with security groups
+  - `storage.ts` - S3 buckets for file storage and static assets
+  - `frontend.ts` - CloudFront and S3 for React app hosting
   - `auth.ts` - Cognito authentication setup
-  - `database.ts` - RDS/DynamoDB database resources
-  - `frontend.ts` - CloudFront and S3 for web hosting
-  - `websocket.ts` - WebSocket API Gateway
 
-- **AI/ML Components**:
-  - `embedding.ts` - Vector embedding infrastructure
-  - `bot-store.ts` - Bot storage and management
-  - `usage-analysis.ts` - Analytics and monitoring
+- **Security & Monitoring**:
+  - `security-groups.ts` - VPC security group configurations
+  - `waf.ts` - Web Application Firewall rules
+  - `monitoring.ts` - CloudWatch logs and metrics
+  - `secrets.ts` - Secrets Manager for credentials
 
 - **Build & Deployment**:
-  - `api-publish-codebuild.ts` - API publishing pipeline
-  - `bedrock-custom-bot-codebuild.ts` - Bot deployment pipeline
-
-- **Security**:
-  - `webacl-for-published-api.ts` - WAF rules for APIs
+  - `lambda-deployment.ts` - Lambda deployment pipeline
+  - `frontend-deployment.ts` - Frontend deployment pipeline
 
 ### Configuration (`/lib/constants/`)
-- `docker.ts` - Docker configuration constants
+- `environment.ts` - Environment-specific configuration
+- `security.ts` - Security policy constants
 
 ### Utilities (`/lib/utils/`)
 - `generate-physical-name.ts` - Resource naming utilities
 - `identity-provider.ts` - Identity provider configurations
 - `parameter-models.ts` - Parameter validation and models
-- `bedrock-guardrails.ts` - Bedrock service guardrails
-- `bedrock-knowledge-base-args.ts` - Knowledge base configuration
+- `vpc-config.ts` - VPC and networking configuration
 
-### Custom Resources (`/custom-resources/`)
-- `cognito-trigger/` - Custom Cognito trigger Lambda functions
-  - `index.py` - Python-based Lambda handler
+### Lambda Functions (`/lambda/`)
+- `handlers/` - FastAPI Lambda function handlers
+  - `main.py` - Main FastAPI application entry point
+  - `requirements.txt` - Python dependencies
 
 ### Configuration Files
 - `cdk.json` - CDK configuration and feature flags
@@ -84,6 +85,7 @@ echo "CDK folder structure created successfully!"
 - `jest.config.js` - Jest testing configuration
 
 ### Compliance (`/rules/`)
+- `security-compliance.ts` - Security and compliance rules
 - `log-retention-checker.ts` - CloudWatch log retention compliance
 
 ### Testing (`/test/`)
@@ -98,10 +100,10 @@ echo "CDK folder structure created successfully!"
 - **aws-cdk** - CDK CLI tool
 
 ### Specialized Constructs
-- **@cdklabs/generative-ai-cdk-constructs** - AI/ML constructs
 - **@aws-cdk/aws-lambda-python-alpha** - Python Lambda constructs
-- **@aws-cdk/aws-glue-alpha** - AWS Glue constructs
+- **@aws-cdk/aws-rds-alpha** - RDS database constructs
 - **cdk-aws-lambda-powertools-layer** - Lambda utilities
+- **@aws-cdk/aws-apigatewayv2** - API Gateway v2 constructs
 
 ### Development Tools
 - **TypeScript** - Type-safe infrastructure code
@@ -111,29 +113,33 @@ echo "CDK folder structure created successfully!"
 
 ### Utility Libraries
 - **zod** - Runtime type validation
-- **effect** - Functional programming utilities
+- **dotenv** - Environment variable management
 
 ## Architecture Patterns
 - **Multi-Stack Architecture** - Separation of concerns across stacks
 - **Reusable Constructs** - Modular infrastructure components
 - **Environment-Agnostic** - Parameterized deployments
-- **Security-First** - WAF, IAM, and encryption by default
-- **Monitoring & Analytics** - Built-in observability
-- **CI/CD Ready** - CodeBuild integration
-- **Serverless-First** - Lambda and managed services
-- **Multi-Region Support** - Regional resource deployment
+- **Security-First** - WAF, IAM, VPC, and encryption by default
+- **Monitoring & Analytics** - Built-in observability with CloudWatch
+- **CI/CD Ready** - Pipeline integration
+- **Serverless-First** - Lambda functions and managed services
+- **Database Security** - RDS in private subnets with encryption
 
 ## Stack Relationships
-1. **bedrock-chat-stack** - Main application infrastructure
-2. **bedrock-custom-bot-stack** - Bot-specific resources
-3. **api-publishment-stack** - API management and publishing
-4. **frontend-waf-stack** - Security layer for frontend
-5. **bedrock-region-resources** - Region-specific services
+1. **main-application-stack** - Main application infrastructure and coordination
+2. **lambda-api-stack** - FastAPI Lambda functions and API Gateway
+3. **database-stack** - RDS PostgreSQL with security and networking
+4. **storage-stack** - S3 buckets for file storage and static assets
+5. **frontend-stack** - React app hosting with CloudFront
+6. **security-stack** - WAF, security groups, and IAM roles
 
 ## Deployment Features
 - **Infrastructure as Code** - Version-controlled infrastructure
-- **Blue/Green Deployments** - Zero-downtime deployments
-- **Auto-scaling** - Dynamic resource scaling
-- **Cost Optimization** - Serverless and managed services
-- **Compliance** - Built-in governance and logging
-- **Disaster Recovery** - Multi-AZ and backup strategies
+- **Serverless Functions** - Lambda-based FastAPI deployment
+- **Database Management** - RDS PostgreSQL with automated backups
+- **Static Asset Hosting** - S3 + CloudFront for React frontend
+- **Security by Default** - VPC isolation, encryption, WAF protection
+- **Auto-scaling** - Lambda concurrency and RDS scaling
+- **Cost Optimization** - Pay-per-use serverless architecture
+- **Monitoring** - CloudWatch logs, metrics, and alarms
+- **Compliance** - Built-in governance and security best practices
