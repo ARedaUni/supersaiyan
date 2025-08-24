@@ -17,17 +17,12 @@ describe("Professional Practice Application Stack Tests", () => {
     
     const template = Template.fromStack(stack);
 
-    // Verify VPC is created
-    template.hasResourceProperties("AWS::EC2::VPC", {
-      EnableDnsHostnames: true,
-      EnableDnsSupport: true,
-    });
-
-    // Verify RDS database is created
-    template.hasResourceProperties("AWS::RDS::DBInstance", {
-      Engine: "postgres",
-      StorageEncrypted: true,
-      DeletionProtection: false, // test environment
+    // Verify DynamoDB tables are created
+    template.hasResourceProperties("AWS::DynamoDB::Table", {
+      BillingMode: "PAY_PER_REQUEST",
+      PointInTimeRecoverySpecification: {
+        PointInTimeRecoveryEnabled: false,
+      },
     });
 
     // Verify S3 buckets are created with encryption
@@ -52,13 +47,12 @@ describe("Professional Practice Application Stack Tests", () => {
     // Verify Lambda function is created
     template.hasResourceProperties("AWS::Lambda::Function", {
       Runtime: "python3.11",
-      Handler: "main.handler",
-      Timeout: 30,
+      Timeout: 900, // 15 minutes
     });
 
-    // Verify API Gateway is created
-    template.hasResourceProperties("AWS::ApiGateway::RestApi", {
-      Name: "Professional Practice API",
+    // Verify API Gateway v2 is created
+    template.hasResourceProperties("AWS::ApiGatewayV2::Api", {
+      ProtocolType: "HTTP",
     });
 
     // Verify CloudFront distribution is created
@@ -73,25 +67,43 @@ describe("Professional Practice Application Stack Tests", () => {
       },
     });
 
-    // Verify WAF is created and associated
+    // Verify WAF is created for both API and Frontend
     template.hasResourceProperties("AWS::WAFv2::WebACL", {
       Scope: "REGIONAL",
       DefaultAction: { Allow: {} },
       Rules: Match.arrayWith([
         Match.objectLike({
-          Name: "AWS-AWSManagedRulesCommonRuleSet",
+          Name: "AWSManagedRulesCommonRuleSet",
           Priority: 1,
-        }),
-        Match.objectLike({
-          Name: "AWS-AWSManagedRulesKnownBadInputsRuleSet", 
-          Priority: 2,
         }),
       ]),
     });
 
-    template.hasResourceProperties("AWS::WAFv2::WebACLAssociation", {
-      ResourceArn: Match.anyValue(),
-      WebAclArn: Match.anyValue(),
+    template.hasResourceProperties("AWS::WAFv2::WebACL", {
+      Scope: "CLOUDFRONT",
+      Rules: Match.arrayWith([
+        Match.objectLike({
+          Name: "AWSManagedRulesCommonRuleSet",
+          Priority: 1,
+        }),
+      ]),
+    });
+
+    // Verify Cognito User Pool is created
+    template.hasResourceProperties("AWS::Cognito::UserPool", {
+      Policies: {
+        PasswordPolicy: {
+          RequireUppercase: true,
+          RequireSymbols: true,
+          RequireNumbers: true,
+          MinimumLength: 8,
+        },
+      },
+    });
+
+    // Verify User Pool Client
+    template.hasResourceProperties("AWS::Cognito::UserPoolClient", {
+      ExplicitAuthFlows: Match.arrayWith(["ALLOW_USER_PASSWORD_AUTH", "ALLOW_USER_SRP_AUTH"]),
     });
   });
 
@@ -108,16 +120,18 @@ describe("Professional Practice Application Stack Tests", () => {
     
     const template = Template.fromStack(stack);
 
-    // Verify deletion protection is enabled in production
-    template.hasResourceProperties("AWS::RDS::DBInstance", {
-      DeletionProtection: true,
+    // Verify point-in-time recovery is enabled in production for DynamoDB
+    template.hasResourceProperties("AWS::DynamoDB::Table", {
+      PointInTimeRecoverySpecification: {
+        PointInTimeRecoveryEnabled: true,
+      },
     });
   });
 
-  test("security groups are properly configured", () => {
+  test("cognito and authentication are properly configured", () => {
     const app = new cdk.App();
     
-    const stack = new MainApplicationStack(app, "SecurityTestStack", {
+    const stack = new MainApplicationStack(app, "AuthTestStack", {
       env: {
         region: "us-east-1",
         account: "123456789012",
@@ -127,32 +141,41 @@ describe("Professional Practice Application Stack Tests", () => {
     
     const template = Template.fromStack(stack);
 
-    // Verify database security group restricts access
-    template.hasResourceProperties("AWS::EC2::SecurityGroup", {
-      GroupDescription: "Security group for RDS database",
-      VpcId: Match.anyValue(),
-      SecurityGroupEgress: [],
+    // Verify Cognito User Pool is created
+    template.hasResourceProperties("AWS::Cognito::UserPool", {
+      Policies: {
+        PasswordPolicy: {
+          RequireUppercase: true,
+          RequireSymbols: true,
+          RequireNumbers: true,
+          MinimumLength: 8,
+        },
+      },
     });
 
-    // Verify Lambda security group allows outbound
-    template.hasResourceProperties("AWS::EC2::SecurityGroup", {
-      GroupDescription: "Security group for Lambda functions",
-      VpcId: Match.anyValue(),
+    // Verify User Pool Client
+    template.hasResourceProperties("AWS::Cognito::UserPoolClient", {
+      ExplicitAuthFlows: Match.arrayWith(["ALLOW_USER_PASSWORD_AUTH", "ALLOW_USER_SRP_AUTH"]),
     });
 
-    // Verify security group ingress rule for database
-    template.hasResourceProperties("AWS::EC2::SecurityGroupIngress", {
-      IpProtocol: "tcp",
-      FromPort: 5432,
-      ToPort: 5432,
-      SourceSecurityGroupId: Match.anyValue(),
+    // Verify User Pool Groups are created
+    template.hasResourceProperties("AWS::Cognito::UserPoolGroup", {
+      GroupName: "Admin",
+    });
+
+    template.hasResourceProperties("AWS::Cognito::UserPoolGroup", {
+      GroupName: "CreatingBotAllowed",
+    });
+
+    template.hasResourceProperties("AWS::Cognito::UserPoolGroup", {
+      GroupName: "PublishAllowed",
     });
   });
 
-  test("secrets manager is configured", () => {
+  test("database tables are configured", () => {
     const app = new cdk.App();
     
-    const stack = new MainApplicationStack(app, "SecretsTestStack", {
+    const stack = new MainApplicationStack(app, "DatabaseTestStack", {
       env: {
         region: "us-east-1",
         account: "123456789012",
@@ -162,13 +185,18 @@ describe("Professional Practice Application Stack Tests", () => {
     
     const template = Template.fromStack(stack);
 
-    // Verify Secrets Manager secret is created
-    template.hasResourceProperties("AWS::SecretsManager::Secret", {
-      Description: "RDS PostgreSQL credentials",
-      GenerateSecretString: {
-        SecretStringTemplate: '{"username":"postgres"}',
-        GenerateStringKey: "password",
-        ExcludeCharacters: '"@/\\',
+    // Verify IAM role for table access is created
+    template.hasResourceProperties("AWS::IAM::Role", {
+      AssumeRolePolicyDocument: {
+        Statement: [
+          {
+            Action: "sts:AssumeRole",
+            Effect: "Allow",
+            Principal: {
+              AWS: Match.anyValue(),
+            },
+          },
+        ],
       },
     });
   });
@@ -200,42 +228,8 @@ describe("Professional Practice Application Stack Tests", () => {
         ],
       },
       ManagedPolicyArns: [
-        "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+        "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
       ],
-    });
-
-    // Verify S3 bucket policies are attached
-    template.hasResourceProperties("AWS::IAM::Policy", {
-      PolicyDocument: {
-        Statement: Match.arrayWith([
-          Match.objectLike({
-            Effect: "Allow",
-            Action: Match.arrayWith([
-              "s3:GetObject*",
-              "s3:GetBucket*",
-              "s3:List*",
-              "s3:DeleteObject*",
-              "s3:PutObject*",
-              "s3:Abort*",
-            ]),
-          }),
-        ]),
-      },
-    });
-
-    // Verify Secrets Manager access policy
-    template.hasResourceProperties("AWS::IAM::Policy", {
-      PolicyDocument: {
-        Statement: Match.arrayWith([
-          Match.objectLike({
-            Effect: "Allow",
-            Action: Match.arrayWith([
-              "secretsmanager:GetSecretValue",
-              "secretsmanager:DescribeSecret",
-            ]),
-          }),
-        ]),
-      },
     });
   });
 
@@ -254,12 +248,7 @@ describe("Professional Practice Application Stack Tests", () => {
 
     // Verify CloudWatch log group is created
     template.hasResourceProperties("AWS::Logs::LogGroup", {
-      RetentionInDays: 7,
-    });
-
-    // Verify RDS log exports are enabled
-    template.hasResourceProperties("AWS::RDS::DBInstance", {
-      EnableCloudwatchLogsExports: ["postgresql"],
+      RetentionInDays: 90,
     });
   });
 
@@ -282,22 +271,26 @@ describe("Professional Practice Application Stack Tests", () => {
     });
 
     template.hasOutput("FrontendUrl", {
-      Description: "CloudFront distribution domain name",
+      Description: "Frontend URL",
     });
 
-    template.hasOutput("DatabaseEndpoint", {
-      Description: "RDS database endpoint",
-    });
-
-    template.hasOutput("StorageBucket", {
+    template.hasOutput("StorageBucketName", {
       Description: "S3 storage bucket name",
+    });
+
+    template.hasOutput("UserPoolId", {
+      Description: "Cognito User Pool ID",
+    });
+
+    template.hasOutput("UserPoolClientId", {
+      Description: "Cognito User Pool Client ID",
     });
   });
 
-  test("VPC subnets are properly configured", () => {
+  test("database and resources are properly configured", () => {
     const app = new cdk.App();
     
-    const stack = new MainApplicationStack(app, "VPCTestStack", {
+    const stack = new MainApplicationStack(app, "ResourceTestStack", {
       env: {
         region: "us-east-1",
         account: "123456789012",
@@ -307,14 +300,11 @@ describe("Professional Practice Application Stack Tests", () => {
     
     const template = Template.fromStack(stack);
 
-    // Should have public, private, and isolated subnets
-    template.resourceCountIs("AWS::EC2::Subnet", 6); // 2 AZs * 3 subnet types
+    // Verify DynamoDB tables are created (conversation and bot tables)
+    template.resourceCountIs("AWS::DynamoDB::Table", 3); // ConversationTable, BotTable, WebsocketSessionTable
 
-    // Verify NAT gateway for private subnet egress
-    template.resourceCountIs("AWS::EC2::NatGateway", 1);
-
-    // Verify internet gateway for public subnets
-    template.resourceCountIs("AWS::EC2::InternetGateway", 1);
+    // Verify both WAF stacks create WebACLs
+    template.resourceCountIs("AWS::WAFv2::WebACL", 2); // API WAF and Frontend WAF
   });
 
   test("stack synthesis succeeds", () => {
@@ -332,6 +322,127 @@ describe("Professional Practice Application Stack Tests", () => {
     expect(() => {
       app.synth();
     }).not.toThrow();
+  });
+
+  test("security configurations are properly set up", () => {
+    const app = new cdk.App();
+    
+    const stack = new MainApplicationStack(app, "SecurityTestStack", {
+      env: {
+        region: "us-east-1",
+        account: "123456789012",
+      },
+      stage: "test",
+    });
+    
+    const template = Template.fromStack(stack);
+
+    // Verify VPC is created
+    template.hasResourceProperties("AWS::EC2::VPC", {
+      CidrBlock: "10.0.0.0/16",
+      EnableDnsHostnames: true,
+      EnableDnsSupport: true,
+    });
+
+    // Verify VPC Endpoints are created (for free tier cost optimization)
+    template.hasResourceProperties("AWS::EC2::VPCEndpoint", {
+      ServiceName: Match.stringLikeRegexp(".*dynamodb.*"),
+      VpcEndpointType: "Gateway",
+    });
+
+    template.hasResourceProperties("AWS::EC2::VPCEndpoint", {
+      ServiceName: Match.stringLikeRegexp(".*s3.*"),
+      VpcEndpointType: "Gateway",
+    });
+
+    // Verify Secrets Manager secrets are created
+    template.hasResourceProperties("AWS::SecretsManager::Secret", {
+      Name: Match.stringLikeRegexp(".*/application/secrets"),
+    });
+
+    template.hasResourceProperties("AWS::SecretsManager::Secret", {
+      Name: Match.stringLikeRegexp(".*/database/credentials"),
+    });
+
+    // Verify KMS key is created with key rotation
+    template.hasResourceProperties("AWS::KMS::Key", {
+      EnableKeyRotation: true,
+    });
+
+    // Verify DynamoDB tables use customer-managed encryption
+    template.hasResourceProperties("AWS::DynamoDB::Table", {
+      SSESpecification: {
+        SSEEnabled: true,
+        KMSMasterKeyId: Match.anyValue(),
+      },
+    });
+
+    // Verify Lambda function is in VPC
+    template.hasResourceProperties("AWS::Lambda::Function", {
+      VpcConfig: {
+        SecurityGroupIds: Match.anyValue(),
+        SubnetIds: Match.anyValue(),
+      },
+    });
+
+    // Verify Security Groups are restrictive
+    template.hasResourceProperties("AWS::EC2::SecurityGroup", {
+      GroupDescription: "Security group for Lambda functions",
+      SecurityGroupEgress: [
+        {
+          CidrIp: "0.0.0.0/0",
+          IpProtocol: "tcp",
+          FromPort: 443,
+          ToPort: 443,
+        },
+      ],
+    });
+
+    // Verify CloudWatch Log Groups are encrypted
+    template.hasResourceProperties("AWS::Logs::LogGroup", {
+      KmsKeyId: Match.anyValue(),
+    });
+
+    // Verify CloudWatch Alarms are created for security monitoring
+    template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+      AlarmName: Match.stringLikeRegexp(".*throttle.*"),
+      ComparisonOperator: "GreaterThanThreshold",
+    });
+
+    // Verify SNS topic for security alerts
+    template.hasResourceProperties("AWS::SNS::Topic", {
+      DisplayName: "Security Alerts",
+    });
+  });
+
+  test("CORS is configured securely", () => {
+    const app = new cdk.App();
+    
+    const stack = new MainApplicationStack(app, "CorsTestStack", {
+      env: {
+        region: "us-east-1",
+        account: "123456789012",
+      },
+      stage: "prod", // Use prod to ensure no wildcards
+    });
+    
+    const template = Template.fromStack(stack);
+
+    // Verify API Gateway CORS doesn't use wildcard
+    template.hasResourceProperties("AWS::ApiGatewayV2::Api", {
+      CorsConfiguration: {
+        AllowOrigins: Match.not(Match.arrayWith(["*"])),
+        AllowCredentials: true,
+        AllowHeaders: Match.arrayWith([
+          "Content-Type",
+          "Authorization",
+          "X-Amz-Date",
+          "X-Api-Key",
+          "X-Amz-Security-Token"
+        ]),
+        MaxAge: 86400, // 1 day
+      },
+    });
   });
 
   test("error responses are configured for SPA", () => {

@@ -1,0 +1,223 @@
+import {
+  CfnOutput,
+  Duration,
+  Stack,
+  RemovalPolicy,
+} from "aws-cdk-lib";
+import {
+  ProviderAttribute,
+  UserPool,
+  UserPoolClient,
+  UserPoolIdentityProviderGoogle,
+  CfnUserPoolGroup,
+  UserPoolIdentityProviderOidc,
+} from "aws-cdk-lib/aws-cognito";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import * as logs from "aws-cdk-lib/aws-logs";
+import { PythonFunction } from "@aws-cdk/aws-lambda-python-alpha";
+import { Runtime } from "aws-cdk-lib/aws-lambda";
+import { Construct } from "constructs";
+import * as path from "path";
+import { Idp, TIdentityProvider } from "../utils/identity-provider";
+
+export interface AuthProps {
+  readonly origin: string;
+  readonly userPoolDomainPrefixKey: string;
+  readonly idp: Idp;
+  readonly allowedSignUpEmailDomains: string[];
+  readonly autoJoinUserGroups: string[];
+  readonly selfSignUpEnabled: boolean;
+  readonly tokenValidity: Duration;
+}
+
+export class Auth extends Construct {
+  readonly userPool: UserPool;
+  readonly client: UserPoolClient;
+  readonly adminGroup: CfnUserPoolGroup;
+  readonly creatingBotAllowedGroup: CfnUserPoolGroup;
+  readonly publishAllowedGroup: CfnUserPoolGroup;
+
+  constructor(scope: Construct, id: string, props: AuthProps) {
+    super(scope, id);
+    const userPool = new UserPool(this, "UserPool", {
+      passwordPolicy: {
+        requireUppercase: true,
+        requireSymbols: true,
+        requireDigits: true,
+        minLength: 8,
+      },
+      // Disable id selfSignUpEnabled is given as false or if selfSignUpEnabled is true and idp is provided
+      selfSignUpEnabled: props.selfSignUpEnabled && !props.idp.isExist(),
+      signInAliases: {
+        username: false,
+        email: true,
+      },
+      removalPolicy: RemovalPolicy.DESTROY,
+    });
+
+    const clientProps = (() => {
+      const defaultProps = {
+        idTokenValidity: props.tokenValidity,
+        authFlows: {
+          userPassword: true,
+          userSrp: true,
+        },
+      };
+      if (!props.idp.isExist()) return defaultProps;
+      return {
+        ...defaultProps,
+        oAuth: {
+          callbackUrls: [props.origin],
+          logoutUrls: [props.origin],
+        },
+        supportedIdentityProviders: [
+          ...props.idp.getSupportedIndetityProviders(),
+        ],
+      };
+    })();
+
+    const client = userPool.addClient(`Client`, clientProps);
+
+    const configureProvider = (
+      provider: TIdentityProvider,
+      userPool: UserPool,
+      client: UserPoolClient
+    ) => {
+      const secret = secretsmanager.Secret.fromSecretNameV2(
+        this,
+        `Secret-${provider.secretName}`,
+        provider.secretName
+      );
+
+      const clientId = secret
+        .secretValueFromJson("clientId")
+        .unsafeUnwrap()
+        .toString();
+      const clientSecret = secret.secretValueFromJson("clientSecret");
+
+      switch (provider.service) {
+        // Currently only Google and custom OIDC are supported
+        case "google": {
+          const googleProvider = new UserPoolIdentityProviderGoogle(
+            this,
+            `GoogleProvider-${provider.secretName}`,
+            {
+              userPool,
+              clientId,
+              clientSecretValue: clientSecret,
+              scopes: ["openid", "email"],
+              attributeMapping: {
+                email: ProviderAttribute.GOOGLE_EMAIL,
+              },
+            }
+          );
+          client.node.addDependency(googleProvider);
+          break;
+        }
+        case "oidc": {
+          const issuerUrl = secret
+            .secretValueFromJson("issuerUrl")
+            .unsafeUnwrap()
+            .toString();
+
+          const oidcProvider = new UserPoolIdentityProviderOidc(
+            this,
+            `OidcProvider-${provider.secretName}`,
+            {
+              name: provider.serviceName,
+              userPool,
+              clientId,
+              clientSecret: clientSecret.unsafeUnwrap().toString(),
+              issuerUrl,
+              attributeMapping: {
+                // This is an example of mapping the email attribute.
+                // Replace this with the actual idp attribute key.
+                email: ProviderAttribute.other("EMAIL"),
+              },
+              scopes: ["openid", "email"],
+            }
+          );
+          client.node.addDependency(oidcProvider);
+          break;
+        }
+      }
+    };
+
+    if (props.idp.isExist()) {
+      for (const provider of props.idp.getProviders()) {
+        configureProvider(provider, userPool, client);
+      }
+
+      userPool.addDomain("UserPool", {
+        cognitoDomain: {
+          domainPrefix: props.userPoolDomainPrefixKey,
+        },
+      });
+    }
+
+    if (props.allowedSignUpEmailDomains.length >= 1) {
+      const checkEmailDomainFunction = new PythonFunction(
+        this,
+        "CheckEmailDomain",
+        {
+          runtime: Runtime.PYTHON_3_11,
+          index: "check_email_domain.py",
+          entry: path.join(
+            __dirname,
+            "../../../backend/auth/check_email_domain"
+          ),
+          timeout: Duration.minutes(1),
+          environment: {
+            ALLOWED_SIGN_UP_EMAIL_DOMAINS_STR: JSON.stringify(
+              props.allowedSignUpEmailDomains
+            ),
+          },
+          logRetention: logs.RetentionDays.THREE_MONTHS,
+        }
+      );
+
+      userPool.addTrigger(
+        'PreSignUp' as any,
+        checkEmailDomainFunction
+      );
+    }
+
+    const adminGroup = new CfnUserPoolGroup(this, "AdminGroup", {
+      groupName: "Admin",
+      userPoolId: userPool.userPoolId,
+    });
+
+    const creatingBotAllowedGroup = new CfnUserPoolGroup(
+      this,
+      "CreatingBotAllowedGroup",
+      {
+        groupName: "CreatingBotAllowed",
+        userPoolId: userPool.userPoolId,
+      }
+    );
+
+    const publishAllowedGroup = new CfnUserPoolGroup(
+      this,
+      "PublishAllowedGroup",
+      {
+        groupName: "PublishAllowed",
+        userPoolId: userPool.userPoolId,
+      }
+    );
+
+    this.client = client;
+    this.userPool = userPool;
+    this.adminGroup = adminGroup;
+    this.creatingBotAllowedGroup = creatingBotAllowedGroup;
+    this.publishAllowedGroup = publishAllowedGroup;
+
+    new CfnOutput(this, "UserPoolId", { value: userPool.userPoolId });
+    new CfnOutput(this, "UserPoolClientId", { value: client.userPoolClientId });
+    if (props.idp.isExist())
+      new CfnOutput(this, "ApprovedRedirectURI", {
+        value: `https://${props.userPoolDomainPrefixKey}.auth.${
+          Stack.of(userPool).region
+        }.amazoncognito.com/oauth2/idpresponse`,
+      });
+  }
+}

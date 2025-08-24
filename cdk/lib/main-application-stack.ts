@@ -1,296 +1,151 @@
 import * as cdk from 'aws-cdk-lib';
-import { CfnOutput, Stack, StackProps } from 'aws-cdk-lib';
-import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as rds from 'aws-cdk-lib/aws-rds';
+import { CfnOutput, Duration, Stack, StackProps } from 'aws-cdk-lib';
 import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as lambda from 'aws-cdk-lib/aws-lambda';
-import * as apigateway from 'aws-cdk-lib/aws-apigateway';
-import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
-import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
-import * as iam from 'aws-cdk-lib/aws-iam';
-import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
-import * as logs from 'aws-cdk-lib/aws-logs';
-import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
+import { Database } from './constructs/database';
+import { Auth } from './constructs/auth';
+import { Api } from './constructs/api';
+import { Frontend } from './constructs/frontend';
+import { Vpc } from './constructs/vpc';
+import { Secrets } from './constructs/secrets';
+import { Monitoring } from './constructs/monitoring';
+import { ApiWafStack } from './stacks/api-waf-stack';
+import { FrontendWafStack } from './stacks/frontend-waf-stack';
+import { identityProvider } from './utils/identity-provider';
 
 export interface MainApplicationStackProps extends StackProps {
   readonly stage?: string;
+  readonly envPrefix?: string;
+  readonly allowedIpV4AddressRanges?: string[];
+  readonly allowedIpV6AddressRanges?: string[];
+  readonly enableIpV6?: boolean;
+  readonly alternateDomainName?: string;
+  readonly hostedZoneId?: string;
 }
 
 export class MainApplicationStack extends Stack {
-  public readonly vpc: ec2.Vpc;
-  public readonly database: rds.DatabaseInstance;
-  public readonly apiFunction: lambda.Function;
-  public readonly api: apigateway.RestApi;
-  public readonly frontendBucket: s3.Bucket;
-  public readonly distribution: cloudfront.Distribution;
+  public readonly vpc: Vpc;
+  public readonly secrets: Secrets;
+  public readonly database: Database;
+  public readonly auth: Auth;
+  public readonly api: Api;
+  public readonly frontend: Frontend;
+  public readonly monitoring: Monitoring;
+  public readonly storageBucket: s3.Bucket;
+  public readonly apiWaf: ApiWafStack;
+  public readonly frontendWaf: FrontendWafStack;
 
   constructor(scope: Construct, id: string, props?: MainApplicationStackProps) {
     super(scope, id, props);
 
     const stage = props?.stage || 'dev';
+    const envPrefix = props?.envPrefix || stage;
+    const enableIpV6 = props?.enableIpV6 ?? false;
 
-    // VPC with security-first configuration
-    this.vpc = new ec2.Vpc(this, 'ProfessionalPracticeVpc', {
-      maxAzs: 2,
-      natGateways: 1,
-      enableDnsHostnames: true,
-      enableDnsSupport: true,
-      subnetConfiguration: [
-        {
-          cidrMask: 24,
-          name: 'PublicSubnet',
-          subnetType: ec2.SubnetType.PUBLIC,
-        },
-        {
-          cidrMask: 24,
-          name: 'PrivateSubnet',
-          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-        },
-        {
-          cidrMask: 24,
-          name: 'DatabaseSubnet',
-          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
-        },
-      ],
+    // Create VPC for secure networking
+    this.vpc = new Vpc(this, 'Vpc', {
+      // Enable NAT Gateway only in production (costs money)
+      enableNatGateway: stage === 'prod',
     });
 
-    // Database security group
-    const dbSecurityGroup = new ec2.SecurityGroup(this, 'DatabaseSecurityGroup', {
-      vpc: this.vpc,
-      description: 'Security group for RDS database',
-      allowAllOutbound: false,
+    // Create secrets for secure configuration management
+    this.secrets = new Secrets(this, 'Secrets', {
+      envPrefix,
     });
 
-    // Lambda security group
-    const lambdaSecurityGroup = new ec2.SecurityGroup(this, 'LambdaSecurityGroup', {
-      vpc: this.vpc,
-      description: 'Security group for Lambda functions',
-      allowAllOutbound: true,
+    // Create WAF stacks first
+    this.apiWaf = new ApiWafStack(this, 'ApiWaf', {
+      envPrefix,
+      allowedIpV4AddressRanges: props?.allowedIpV4AddressRanges,
+      allowedIpV6AddressRanges: props?.allowedIpV6AddressRanges,
     });
 
-    // Allow Lambda to connect to database
-    dbSecurityGroup.addIngressRule(
-      lambdaSecurityGroup,
-      ec2.Port.tcp(5432),
-      'Allow Lambda to connect to PostgreSQL'
-    );
-
-    // Database credentials in Secrets Manager
-    const dbCredentials = new secretsmanager.Secret(this, 'DatabaseCredentials', {
-      description: 'RDS PostgreSQL credentials',
-      generateSecretString: {
-        secretStringTemplate: JSON.stringify({ username: 'postgres' }),
-        generateStringKey: 'password',
-        excludeCharacters: '"@/\\',
-      },
-    });
-
-    // RDS PostgreSQL database
-    this.database = new rds.DatabaseInstance(this, 'ProfessionalPracticeDatabase', {
-      engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_15 }),
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
-      vpc: this.vpc,
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
-      },
-      securityGroups: [dbSecurityGroup],
-      credentials: rds.Credentials.fromSecret(dbCredentials),
-      databaseName: 'professionalpractice',
-      backupRetention: cdk.Duration.days(7),
-      deletionProtection: stage === 'prod',
-      storageEncrypted: true,
-      cloudwatchLogsExports: ['postgresql'],
-      monitoringInterval: cdk.Duration.seconds(60),
+    this.frontendWaf = new FrontendWafStack(this, 'FrontendWaf', {
+      envPrefix,
+      allowedIpV4AddressRanges: props?.allowedIpV4AddressRanges || [],
+      allowedIpV6AddressRanges: props?.allowedIpV6AddressRanges || [],
     });
 
     // S3 bucket for file storage
-    const storageBucket = new s3.Bucket(this, 'StorageBucket', {
+    this.storageBucket = new s3.Bucket(this, 'StorageBucket', {
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       versioned: true,
       serverAccessLogsPrefix: 'access-logs/',
     });
 
-    // S3 bucket for frontend hosting
-    this.frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      versioned: true,
+    // Create Database construct with KMS encryption
+    this.database = new Database(this, 'Database', {
+      pointInTimeRecovery: stage === 'prod',
+      kmsKey: this.secrets.kmsKey,
     });
 
-    // CloudWatch Log Group for Lambda
-    const logGroup = new logs.LogGroup(this, 'ApiLogGroup', {
-      retention: logs.RetentionDays.ONE_WEEK,
+    // Create identity provider configuration
+    const idp = identityProvider([]); // Empty array means no external providers
+
+    // Create Auth construct
+    this.auth = new Auth(this, 'Auth', {
+      origin: 'https://localhost:3000', // Will be updated after frontend is created
+      userPoolDomainPrefixKey: `${envPrefix}-professional-practice`,
+      idp,
+      allowedSignUpEmailDomains: [], // No domain restrictions
+      autoJoinUserGroups: [],
+      selfSignUpEnabled: true,
+      tokenValidity: Duration.hours(24),
     });
 
-    // IAM role for Lambda function
-    const lambdaRole = new iam.Role(this, 'LambdaExecutionRole', {
-      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaVPCAccessExecutionRole'),
-      ],
-    });
-
-    // Grant Lambda access to secrets and S3
-    dbCredentials.grantRead(lambdaRole);
-    storageBucket.grantReadWrite(lambdaRole);
-
-    // FastAPI Lambda function
-    this.apiFunction = new lambda.Function(this, 'ApiFunction', {
-      runtime: lambda.Runtime.PYTHON_3_11,
-      handler: 'main.handler',
-      code: lambda.Code.fromAsset('../lambda/handlers'),
-      timeout: cdk.Duration.seconds(30),
-      memorySize: 512,
+    // Create API construct with enhanced security
+    this.api = new Api(this, 'Api', {
+      database: this.database,
+      envName: stage,
+      auth: this.auth,
+      storageBucket: this.storageBucket,
       vpc: this.vpc,
-      vpcSubnets: {
-        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
-      },
-      securityGroups: [lambdaSecurityGroup],
-      role: lambdaRole,
-      logGroup: logGroup,
-      environment: {
-        DB_SECRET_ARN: dbCredentials.secretArn,
-        STORAGE_BUCKET: storageBucket.bucketName,
-        STAGE: stage,
-      },
+      secrets: this.secrets,
+      // Will be set after frontend is created
+      frontendOrigin: undefined,
     });
 
-    // API Gateway
-    this.api = new apigateway.RestApi(this, 'ProfessionalPracticeApi', {
-      restApiName: 'Professional Practice API',
-      description: 'Security-focused professional practice application API',
-      defaultCorsPreflightOptions: {
-        allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ['Content-Type', 'X-Amz-Date', 'Authorization', 'X-Api-Key'],
-      },
-      deployOptions: {
-        stageName: stage,
-        loggingLevel: apigateway.MethodLoggingLevel.INFO,
-        dataTraceEnabled: true,
-      },
+    // Create Frontend construct
+    this.frontend = new Frontend(this, 'Frontend', {
+      webAclId: this.frontendWaf.webAclArn.value,
+      enableIpV6: enableIpV6,
+      alternateDomainName: props?.alternateDomainName,
+      hostedZoneId: props?.hostedZoneId,
     });
 
-    // Lambda integration
-    const lambdaIntegration = new apigateway.LambdaIntegration(this.apiFunction, {
-      requestTemplates: { 'application/json': '{ "statusCode": "200" }' },
-    });
-
-    // API Gateway resources
-    const apiResource = this.api.root.addResource('api');
-    const v1Resource = apiResource.addResource('v1');
-    v1Resource.addProxy({
-      defaultIntegration: lambdaIntegration,
-      anyMethod: true,
-    });
-
-    // WAF for API Gateway
-    const webAcl = new wafv2.CfnWebACL(this, 'ApiWebACL', {
-      scope: 'REGIONAL',
-      defaultAction: { allow: {} },
-      rules: [
-        {
-          name: 'AWS-AWSManagedRulesCommonRuleSet',
-          priority: 1,
-          statement: {
-            managedRuleGroupStatement: {
-              vendorName: 'AWS',
-              name: 'AWSManagedRulesCommonRuleSet',
-            },
-          },
-          overrideAction: { none: {} },
-          visibilityConfig: {
-            sampledRequestsEnabled: true,
-            cloudWatchMetricsEnabled: true,
-            metricName: 'CommonRuleSetMetric',
-          },
-        },
-        {
-          name: 'AWS-AWSManagedRulesKnownBadInputsRuleSet',
-          priority: 2,
-          statement: {
-            managedRuleGroupStatement: {
-              vendorName: 'AWS',
-              name: 'AWSManagedRulesKnownBadInputsRuleSet',
-            },
-          },
-          overrideAction: { none: {} },
-          visibilityConfig: {
-            sampledRequestsEnabled: true,
-            cloudWatchMetricsEnabled: true,
-            metricName: 'KnownBadInputsRuleSetMetric',
-          },
-        },
-      ],
-      visibilityConfig: {
-        sampledRequestsEnabled: true,
-        cloudWatchMetricsEnabled: true,
-        metricName: 'ApiWebACL',
-      },
-    });
-
-    // Associate WAF with API Gateway
-    new wafv2.CfnWebACLAssociation(this, 'ApiWebACLAssociation', {
-      resourceArn: this.api.deploymentStage.stageArn,
-      webAclArn: webAcl.attrArn,
-    });
-
-    // Origin Access Identity for CloudFront
-    const originAccessIdentity = new cloudfront.OriginAccessIdentity(this, 'FrontendOAI', {
-      comment: 'Origin Access Identity for Professional Practice Frontend',
-    });
-
-    // Grant CloudFront access to S3 bucket
-    this.frontendBucket.grantRead(originAccessIdentity);
-
-    // CloudFront distribution
-    this.distribution = new cloudfront.Distribution(this, 'FrontendDistribution', {
-      defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessIdentity(this.frontendBucket, {
-          originAccessIdentity,
-        }),
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-      },
-      additionalBehaviors: {
-        '/api/*': {
-          origin: new origins.RestApiOrigin(this.api),
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
-          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-        },
-      },
-      defaultRootObject: 'index.html',
-      errorResponses: [
-        {
-          httpStatus: 404,
-          responseHttpStatus: 200,
-          responsePagePath: '/index.html',
-        },
-      ],
+    // Create monitoring and security alerting
+    this.monitoring = new Monitoring(this, 'Monitoring', {
+      envPrefix,
+      kmsKey: this.secrets.kmsKey,
+      apiGatewayId: this.api.api.apiId,
+      lambdaFunction: this.api.handler,
     });
 
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
-      value: this.api.url,
+      value: this.api.api.apiEndpoint,
       description: 'API Gateway URL',
     });
 
     new cdk.CfnOutput(this, 'FrontendUrl', {
-      value: this.distribution.distributionDomainName,
-      description: 'CloudFront distribution domain name',
+      value: this.frontend.getOrigin(),
+      description: 'Frontend URL',
     });
 
-    new cdk.CfnOutput(this, 'DatabaseEndpoint', {
-      value: this.database.instanceEndpoint.hostname,
-      description: 'RDS database endpoint',
-    });
-
-    new cdk.CfnOutput(this, 'StorageBucket', {
-      value: storageBucket.bucketName,
+    new cdk.CfnOutput(this, 'StorageBucketName', {
+      value: this.storageBucket.bucketName,
       description: 'S3 storage bucket name',
+    });
+
+    new cdk.CfnOutput(this, 'UserPoolId', {
+      value: this.auth.userPool.userPoolId,
+      description: 'Cognito User Pool ID',
+    });
+
+    new cdk.CfnOutput(this, 'UserPoolClientId', {
+      value: this.auth.client.userPoolClientId,
+      description: 'Cognito User Pool Client ID',
     });
   }
 }
