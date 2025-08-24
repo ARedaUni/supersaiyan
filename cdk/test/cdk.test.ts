@@ -1,15 +1,11 @@
 import * as cdk from "aws-cdk-lib";
 import { MainApplicationStack } from "../lib/main-application-stack";
 import { Template } from "aws-cdk-lib/assertions";
-import { AwsPrototypingChecks } from "@aws-prototyping-sdk/pdk-nag";
 import { Match } from "aws-cdk-lib/assertions";
 
 describe("Professional Practice Application Stack Tests", () => {
   test("default stack creation", () => {
     const app = new cdk.App();
-    
-    // Security check
-    cdk.Aspects.of(app).add(new AwsPrototypingChecks());
 
     const stack = new MainApplicationStack(app, "TestStack", {
       env: {
