@@ -13,6 +13,8 @@ export interface InputProps
   defaultValue?: string;
   /** Placeholder text */
   placeholder?: string;
+  /** Whether the input is disabled */
+  disabled?: boolean;
   /** Change handler */
   onChange?: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }
@@ -25,6 +27,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
   type = 'text',
   className = '',
   id,
+  disabled = true,
   error,
   required,
   helpText,
@@ -39,8 +42,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
     'focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-900',
     'disabled:bg-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed',
     'transition-all duration-200 shadow-sm',
-    hasError 
-      ? 'border-red-500/50 focus:ring-red-500/50 focus:border-red-500' 
+    hasError
+      ? 'border-red-500/50 focus:ring-red-500/50 focus:border-red-500'
       : 'border-gray-600 focus:ring-blue-500/50 focus:border-blue-500 hover:border-gray-500'
   ].join(' ');
 
